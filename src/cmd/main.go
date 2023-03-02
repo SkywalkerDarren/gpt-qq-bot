@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	gogpt "github.com/sashabaranov/go-gpt3"
 )
@@ -22,8 +23,9 @@ func main() {
 	client := gogpt.NewClientWithConfig(cfg)
 	ctx := context.Background()
 
+	baseSetting := gogpt.ChatCompletionMessage{Role: "system", Content: "你是一个说中文的AI助手，名字叫做\"聊天狗屁通\""}
 	baseMsgs := []gogpt.ChatCompletionMessage{
-		{"system", "你是一个说中文的AI助手，名字叫做\"聊天狗屁通\""},
+		baseSetting,
 		// {"user", "Translate Text to English: \"你好\""},
 		// {"assistant", "Hello\nHi"},
 		// {"user", "Translate Text to English: \"我是中国人\""},
@@ -71,40 +73,63 @@ func main() {
 					_ = json.Unmarshal(message, &groupMsg)
 					prefix := "[CQ:at,qq=2869015936]"
 					if strings.HasPrefix(groupMsg.Message, prefix) {
-						msgs = append(msgs, gogpt.ChatCompletionMessage{
-							Role:    "user",
-							Content: strings.TrimSpace(strings.Split(groupMsg.Message, prefix)[1]),
-						})
-						merge := mergeSlice(baseMsgs, msgs)
-						response, err := client.CreateChatCompletion(ctx, gogpt.ChatCompletionRequest{
-							Model:    gogpt.GPT3Dot5Turbo,
-							Messages: merge,
-						})
-						if err != nil {
-							return
-						}
-						output := response.Choices[0].Message
-						msgs = append(msgs, output)
+						content := strings.TrimSpace(strings.Split(groupMsg.Message, prefix)[1])
+						if content == "/clear" {
+							msgs = []gogpt.ChatCompletionMessage{}
+							sendMsg := model.WebsocketActionRequest{
+								Action: model.SendGroupMsg,
+								Params: model.SendGroupMsgParams{
+									GroupID: groupMsg.GroupID,
+									Message: "历史记录清空成功",
+								},
+								Echo: uuid.NewString(),
+							}
+							encoded, _ := json.Marshal(sendMsg)
+							err = c.WriteMessage(websocket.TextMessage, encoded)
+							if err != nil {
+								return
+							}
+						} else if strings.HasPrefix(content, "/set") {
+							baseMsgs = []gogpt.ChatCompletionMessage{
+								baseSetting,
+								{Role: "system", Content: strings.TrimSpace(strings.Split(content, "/set")[1])},
+							}
+						} else {
+							msgs = append(msgs, gogpt.ChatCompletionMessage{
+								Role:    "user",
+								Content: content,
+							})
+							merge := mergeSlice(baseMsgs, msgs)
+							response, err := client.CreateChatCompletion(ctx, gogpt.ChatCompletionRequest{
+								Model:    gogpt.GPT3Dot5Turbo,
+								Messages: merge,
+							})
+							if err != nil {
+								return
+							}
+							output := response.Choices[0].Message
+							msgs = append(msgs, output)
 
-						if len(msgs) >= 2 && response.Usage.TotalTokens >= 500 {
-							msgs = msgs[2:]
-						}
+							if len(msgs) >= 2 && response.Usage.TotalTokens >= 500 {
+								msgs = msgs[2:]
+							}
 
-						// send message
-						sendMsg := model.WebsocketActionRequest{
-							Action: model.SendGroupMsg,
-							Params: model.SendGroupMsgParams{
-								GroupID: groupMsg.GroupID,
-								Message: output.Content,
-							},
-							Echo: "echo",
+							// send message
+							sendMsg := model.WebsocketActionRequest{
+								Action: model.SendGroupMsg,
+								Params: model.SendGroupMsgParams{
+									GroupID: groupMsg.GroupID,
+									Message: output.Content,
+								},
+								Echo: uuid.NewString(),
+							}
+							encoded, _ := json.Marshal(sendMsg)
+							err = c.WriteMessage(websocket.TextMessage, encoded)
+							if err != nil {
+								return
+							}
+							log.Println("send:", string(encoded))
 						}
-						encoded, _ := json.Marshal(sendMsg)
-						err = c.WriteMessage(websocket.TextMessage, encoded)
-						if err != nil {
-							return
-						}
-						log.Println("send:", string(encoded))
 					}
 
 				} else if msg.MessageType == model.MessageTypePrivate {
