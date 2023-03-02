@@ -94,6 +94,19 @@ func main() {
 								baseSetting,
 								{Role: "system", Content: strings.TrimSpace(strings.Split(content, "/set")[1])},
 							}
+							sendMsg := model.WebsocketActionRequest{
+								Action: model.SendGroupMsg,
+								Params: model.SendGroupMsgParams{
+									GroupID: groupMsg.GroupID,
+									Message: "人设已更新",
+								},
+								Echo: uuid.NewString(),
+							}
+							encoded, _ := json.Marshal(sendMsg)
+							err = c.WriteMessage(websocket.TextMessage, encoded)
+							if err != nil {
+								return
+							}
 						} else {
 							msgs = append(msgs, gogpt.ChatCompletionMessage{
 								Role:    "user",
