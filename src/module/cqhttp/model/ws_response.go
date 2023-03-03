@@ -68,6 +68,14 @@ type Sender struct {
 	UserID   int64  `json:"user_id"`
 }
 
+type NoticeEvent struct {
+	Event
+}
+
+type RequestEvent struct {
+	Event
+}
+
 // recv: {"_post_method":2,"meta_event_type":"lifecycle","post_type":"meta_event","self_id":2869015936,"sub_type":"connect","time":1677750317}
 // recv: {"post_type":"meta_event","meta_event_type":"heartbeat","time":1677758872,"self_id":2869015936,"status":
 // {"app_enabled":true,"app_good":true,"app_initialized":true,"good":true,"online":true,"plugins_good":null,"stat":
@@ -85,6 +93,18 @@ type MetaEventType string
 const (
 	MetaEventTypeHeartbeat MetaEventType = "heartbeat"
 	MetaEventTypeLifecycle MetaEventType = "lifecycle"
+)
+
+type MetaLifecycleEvent struct {
+	MetaEvent
+	SubType LifecycleSubType `json:"sub_type"`
+}
+
+type LifecycleSubType string
+
+const (
+	LifecycleSubTypeConnect    LifecycleSubType = "connect"
+	LifecycleSubTypeDisconnect LifecycleSubType = "disconnect"
 )
 
 type MetaHeartbeatEvent struct {
