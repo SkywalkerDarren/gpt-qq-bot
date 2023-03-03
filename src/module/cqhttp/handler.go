@@ -12,9 +12,14 @@ type Handler interface {
 	OnMetaEvent(metaEvent model.MetaEvent, action Action)
 	OnMetaHeartbeat(metaHeartbeat model.MetaHeartbeatEvent, action Action)
 	OnMetaLifecycle(metaLifecycle model.MetaLifecycleEvent, action Action)
+	OnActionResponse(resp model.ActionResponse, action Action)
 }
 
 type DefaultHandler struct {
+}
+
+func (d *DefaultHandler) OnActionResponse(resp model.ActionResponse, action Action) {
+
 }
 
 func (d *DefaultHandler) OnEvent(event model.Event, action Action) {

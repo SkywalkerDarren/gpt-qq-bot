@@ -4,6 +4,7 @@ import (
 	"OpenAIBot/src/module/cqhttp"
 	"OpenAIBot/src/module/cqhttp/model"
 	"context"
+	"log"
 	"os"
 	"strings"
 
@@ -13,11 +14,11 @@ import (
 type ChatBot struct {
 	cqhttp.DefaultHandler
 	openAI             *gogpt.Client
-	msgsGroupMap       map[int64][]gogpt.ChatCompletionMessage
-	baseMsgsGroupMap   map[int64][]gogpt.ChatCompletionMessage
+	msgsGroupMap       map[int64]*[]gogpt.ChatCompletionMessage
+	baseMsgsGroupMap   map[int64]*[]gogpt.ChatCompletionMessage
 	baseSetting        gogpt.ChatCompletionMessage
-	msgsPrivateMap     map[int64][]gogpt.ChatCompletionMessage
-	baseMsgsPrivateMap map[int64][]gogpt.ChatCompletionMessage
+	msgsPrivateMap     map[int64]*[]gogpt.ChatCompletionMessage
+	baseMsgsPrivateMap map[int64]*[]gogpt.ChatCompletionMessage
 	maxContextTokens   int
 }
 
@@ -25,17 +26,33 @@ func NewChatBot() *ChatBot {
 	tk := os.Getenv("OPENAI_KEY")
 	cfg := gogpt.DefaultConfig(tk)
 	client := gogpt.NewClientWithConfig(cfg)
-	baseSetting := gogpt.ChatCompletionMessage{Role: "system", Content: "你是一个说中文的AI聊天机器人，回答尽可能简短，名字叫做\"聊天狗屁通\""}
-	maxContextTokens := 500
+	baseSetting := gogpt.ChatCompletionMessage{Role: "system", Content: "你说话的语言是中文，回答简短精炼，名字叫做\"聊天狗屁通\""}
+	maxContextTokens := 1000
 	return &ChatBot{
-		msgsGroupMap:       make(map[int64][]gogpt.ChatCompletionMessage),
-		baseMsgsGroupMap:   make(map[int64][]gogpt.ChatCompletionMessage),
-		msgsPrivateMap:     make(map[int64][]gogpt.ChatCompletionMessage),
-		baseMsgsPrivateMap: make(map[int64][]gogpt.ChatCompletionMessage),
+		msgsGroupMap:       make(map[int64]*[]gogpt.ChatCompletionMessage),
+		baseMsgsGroupMap:   make(map[int64]*[]gogpt.ChatCompletionMessage),
+		msgsPrivateMap:     make(map[int64]*[]gogpt.ChatCompletionMessage),
+		baseMsgsPrivateMap: make(map[int64]*[]gogpt.ChatCompletionMessage),
 		openAI:             client,
 		baseSetting:        baseSetting,
 		maxContextTokens:   maxContextTokens,
 	}
+}
+
+func (c *ChatBot) OnMessage(msg model.MessageEvent, action cqhttp.Action) {
+	log.Printf("OnMessage: %+v\n", msg)
+}
+
+func (c *ChatBot) OnNotice(msg model.NoticeEvent, action cqhttp.Action) {
+	log.Printf("OnNotice: %+v\n", msg)
+}
+
+func (c *ChatBot) OnRequest(msg model.RequestEvent, action cqhttp.Action) {
+	log.Printf("OnRequest: %+v\n", msg)
+}
+
+func (c *ChatBot) OnMetaLifecycle(msg model.MetaLifecycleEvent, action cqhttp.Action) {
+	log.Printf("OnMetaLifecycle: %+v\n", msg)
 }
 
 func (c *ChatBot) OnMessageGroup(msg model.MessageGroupEvent, action cqhttp.Action) {
@@ -44,36 +61,44 @@ func (c *ChatBot) OnMessageGroup(msg model.MessageGroupEvent, action cqhttp.Acti
 
 		msgs, ok := c.msgsGroupMap[msg.GroupID]
 		if !ok {
-			msgs = []gogpt.ChatCompletionMessage{}
+			msgs = &[]gogpt.ChatCompletionMessage{}
 			c.msgsGroupMap[msg.GroupID] = msgs
 		}
 
 		baseMsgs, ok := c.baseMsgsGroupMap[msg.GroupID]
 		if !ok {
-			baseMsgs = []gogpt.ChatCompletionMessage{}
+			baseMsgs = &[]gogpt.ChatCompletionMessage{}
 			c.baseMsgsGroupMap[msg.GroupID] = baseMsgs
 		}
 
 		content := strings.TrimSpace(strings.Split(msg.Message, prefix)[1])
 		if content == "/help" {
-			action.SendGroupMsg(msg.GroupID, "/clear 清空历史记录\n/set 设置人设\n/help 帮助\n其他就是聊天")
+			action.SendGroupMsg(msg.GroupID, "/help: 帮助\n/reset: 重置\n/clear: 清空历史记录\n/set: 设置人设")
+		} else if content == "/reset" {
+			*baseMsgs = []gogpt.ChatCompletionMessage{
+				c.baseSetting,
+			}
+			*msgs = []gogpt.ChatCompletionMessage{}
+			action.SendGroupMsg(msg.GroupID, "/重置成功")
 		} else if content == "/clear" {
-			c.msgsGroupMap[msg.GroupID] = []gogpt.ChatCompletionMessage{}
+			*msgs = []gogpt.ChatCompletionMessage{}
 			action.SendGroupMsg(msg.GroupID, "/历史记录清空成功")
 		} else if strings.HasPrefix(content, "/set") {
-			baseMsgs = []gogpt.ChatCompletionMessage{
-				c.baseSetting,
+			*baseMsgs = []gogpt.ChatCompletionMessage{
 				{Role: "system", Content: strings.TrimSpace(strings.Split(content, "/set")[1])},
 			}
-			c.baseMsgsGroupMap[msg.GroupID] = baseMsgs
-			c.msgsGroupMap[msg.GroupID] = []gogpt.ChatCompletionMessage{}
+			*msgs = []gogpt.ChatCompletionMessage{}
 			action.SendGroupMsg(msg.GroupID, "/人设已更新")
+		} else if strings.HasPrefix(content, "/addset") {
+			*baseMsgs = append(*baseMsgs, gogpt.ChatCompletionMessage{Role: "system", Content: strings.TrimSpace(strings.Split(content, "/addset")[1])})
+			*msgs = []gogpt.ChatCompletionMessage{}
+			action.SendGroupMsg(msg.GroupID, "/人设已追加")
 		} else {
-			msgs = append(msgs, gogpt.ChatCompletionMessage{
+			*msgs = append(*msgs, gogpt.ChatCompletionMessage{
 				Role:    "user",
 				Content: content,
 			})
-			merge := mergeSlice(baseMsgs, msgs)
+			merge := mergeSlice(*baseMsgs, *msgs)
 			response, err := c.openAI.CreateChatCompletion(context.Background(), gogpt.ChatCompletionRequest{
 				Model:    gogpt.GPT3Dot5Turbo,
 				Messages: merge,
@@ -83,12 +108,11 @@ func (c *ChatBot) OnMessageGroup(msg model.MessageGroupEvent, action cqhttp.Acti
 				return
 			}
 			output := response.Choices[0].Message
-			msgs = append(msgs, output)
+			*msgs = append(*msgs, output)
 
-			if len(msgs) >= 2 && response.Usage.TotalTokens >= c.maxContextTokens {
-				msgs = msgs[2:]
+			if len(*msgs) >= 2 && response.Usage.TotalTokens >= c.maxContextTokens {
+				*msgs = (*msgs)[2:]
 			}
-			c.msgsGroupMap[msg.GroupID] = msgs
 
 			// send message
 			action.SendGroupMsg(msg.GroupID, output.Content)
@@ -99,36 +123,44 @@ func (c *ChatBot) OnMessageGroup(msg model.MessageGroupEvent, action cqhttp.Acti
 func (c *ChatBot) OnMessagePrivate(msg model.MessagePrivateEvent, action cqhttp.Action) {
 	msgs, ok := c.msgsPrivateMap[msg.UserID]
 	if !ok {
-		msgs = []gogpt.ChatCompletionMessage{}
+		msgs = &[]gogpt.ChatCompletionMessage{}
 		c.msgsPrivateMap[msg.UserID] = msgs
 	}
 
 	baseMsgs, ok := c.baseMsgsPrivateMap[msg.UserID]
 	if !ok {
-		baseMsgs = []gogpt.ChatCompletionMessage{}
+		baseMsgs = &[]gogpt.ChatCompletionMessage{}
 		c.baseMsgsPrivateMap[msg.UserID] = baseMsgs
 	}
 
 	content := msg.Message
 	if content == "/help" {
-		action.SendPrivateMsg(msg.UserID, "/clear 清空历史记录\n/set 设置人设\n/help 帮助\n其他就是聊天")
+		action.SendPrivateMsg(msg.UserID, "/help: 帮助\n/reset: 重置\n/clear: 清空历史记录\n/set: 设置人设")
+	} else if content == "/reset" {
+		*baseMsgs = []gogpt.ChatCompletionMessage{
+			c.baseSetting,
+		}
+		*msgs = []gogpt.ChatCompletionMessage{}
+		action.SendPrivateMsg(msg.UserID, "/重置成功")
 	} else if content == "/clear" {
-		c.msgsPrivateMap[msg.UserID] = []gogpt.ChatCompletionMessage{}
+		*msgs = []gogpt.ChatCompletionMessage{}
 		action.SendPrivateMsg(msg.UserID, "/历史记录清空成功")
 	} else if strings.HasPrefix(content, "/set") {
-		baseMsgs = []gogpt.ChatCompletionMessage{
-			c.baseSetting,
+		*baseMsgs = []gogpt.ChatCompletionMessage{
 			{Role: "system", Content: strings.TrimSpace(strings.Split(content, "/set")[1])},
 		}
-		c.baseMsgsPrivateMap[msg.UserID] = baseMsgs
-		c.msgsPrivateMap[msg.UserID] = []gogpt.ChatCompletionMessage{}
+		*msgs = []gogpt.ChatCompletionMessage{}
 		action.SendPrivateMsg(msg.UserID, "/人设已更新")
+	} else if strings.HasPrefix(content, "/addset") {
+		*baseMsgs = append(*baseMsgs, gogpt.ChatCompletionMessage{Role: "system", Content: strings.TrimSpace(strings.Split(content, "/addset")[1])})
+		*msgs = []gogpt.ChatCompletionMessage{}
+		action.SendPrivateMsg(msg.UserID, "/人设已追加")
 	} else {
-		msgs = append(msgs, gogpt.ChatCompletionMessage{
+		*msgs = append(*msgs, gogpt.ChatCompletionMessage{
 			Role:    "user",
 			Content: content,
 		})
-		merge := mergeSlice(baseMsgs, msgs)
+		merge := mergeSlice(*baseMsgs, *msgs)
 		response, err := c.openAI.CreateChatCompletion(context.Background(), gogpt.ChatCompletionRequest{
 			Model:    gogpt.GPT3Dot5Turbo,
 			Messages: merge,
@@ -138,12 +170,11 @@ func (c *ChatBot) OnMessagePrivate(msg model.MessagePrivateEvent, action cqhttp.
 			return
 		}
 		output := response.Choices[0].Message
-		msgs = append(msgs, output)
+		*msgs = append(*msgs, output)
 
-		if len(msgs) >= 2 && response.Usage.TotalTokens >= c.maxContextTokens {
-			msgs = msgs[2:]
+		if len(*msgs) >= 2 && response.Usage.TotalTokens >= c.maxContextTokens {
+			*msgs = (*msgs)[2:]
 		}
-		c.msgsPrivateMap[msg.UserID] = msgs
 
 		// send message
 		action.SendPrivateMsg(msg.UserID, output.Content)

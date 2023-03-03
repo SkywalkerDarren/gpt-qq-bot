@@ -133,3 +133,6 @@ type Stat struct {
 	LostTimes       int64 `json:"lost_times"`
 	LastMessageTime int64 `json:"last_message_time"`
 }
+
+type ActionResponse struct {
+}

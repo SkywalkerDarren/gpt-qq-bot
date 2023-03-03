@@ -43,8 +43,6 @@ func (c *CQHttp) wsHandler() {
 			continue
 		}
 
-		log.Printf("recv: %s\n", message)
-
 		var event model.Event
 		err = json.Unmarshal(message, &event)
 		if err != nil {
