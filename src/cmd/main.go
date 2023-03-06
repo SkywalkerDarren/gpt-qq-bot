@@ -1,6 +1,7 @@
 package main
 
 import (
+	"OpenAIBot/src/config"
 	"OpenAIBot/src/controller"
 	"OpenAIBot/src/module/cqhttp"
 	"OpenAIBot/src/module/cqhttp/model"
@@ -11,12 +12,19 @@ import (
 
 func main() {
 
-	chatBot := controller.NewChatBot()
+	cfg := config.GetConfigFromJsonFile()
+
+	chatBot := controller.NewChatBot(
+		cfg.TriggerPrefix,
+		cfg.MaxTokens,
+		cfg.OpenAIKey,
+		cfg.DefaultPrompt,
+	)
 	client := cqhttp.NewCQHttp(
 		&model.CQHttpConfig{
-			Host:  "localhost:5701",
+			Host:  cfg.WebsocketHost,
 			Path:  "/",
-			Token: "bot",
+			Token: cfg.WebsocketToken,
 		},
 		chatBot,
 	)

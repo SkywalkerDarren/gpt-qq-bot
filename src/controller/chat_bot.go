@@ -5,7 +5,6 @@ import (
 	"OpenAIBot/src/module/cqhttp/model"
 	"context"
 	"log"
-	"os"
 	"strings"
 
 	gogpt "github.com/sashabaranov/go-gpt3"
@@ -16,21 +15,22 @@ type ChatBot struct {
 	openAI             *gogpt.Client
 	msgsGroupMap       map[int64]*[]gogpt.ChatCompletionMessage
 	baseMsgsGroupMap   map[int64]*[]gogpt.ChatCompletionMessage
+	groupTriggerPrefix string
 	baseSetting        gogpt.ChatCompletionMessage
 	msgsPrivateMap     map[int64]*[]gogpt.ChatCompletionMessage
 	baseMsgsPrivateMap map[int64]*[]gogpt.ChatCompletionMessage
 	maxContextTokens   int
 }
 
-func NewChatBot() *ChatBot {
-	tk := os.Getenv("OPENAI_KEY")
-	cfg := gogpt.DefaultConfig(tk)
+func NewChatBot(trigger string, maxTokenUsage int, openAIToken string, prompt string) *ChatBot {
+	cfg := gogpt.DefaultConfig(openAIToken)
 	client := gogpt.NewClientWithConfig(cfg)
-	baseSetting := gogpt.ChatCompletionMessage{Role: "system", Content: "你说话的语言是中文，回答简短精炼，名字叫做\"聊天狗屁通\""}
-	maxContextTokens := 1000
+	baseSetting := gogpt.ChatCompletionMessage{Role: "system", Content: prompt}
+	maxContextTokens := maxTokenUsage
 	return &ChatBot{
 		msgsGroupMap:       make(map[int64]*[]gogpt.ChatCompletionMessage),
 		baseMsgsGroupMap:   make(map[int64]*[]gogpt.ChatCompletionMessage),
+		groupTriggerPrefix: trigger,
 		msgsPrivateMap:     make(map[int64]*[]gogpt.ChatCompletionMessage),
 		baseMsgsPrivateMap: make(map[int64]*[]gogpt.ChatCompletionMessage),
 		openAI:             client,
@@ -56,7 +56,7 @@ func (c *ChatBot) OnMetaLifecycle(msg model.MetaLifecycleEvent, action cqhttp.Ac
 }
 
 func (c *ChatBot) OnMessageGroup(msg model.MessageGroupEvent, action cqhttp.Action) {
-	prefix := "[CQ:at,qq=2869015936]"
+	prefix := c.groupTriggerPrefix
 	if strings.HasPrefix(msg.Message, prefix) {
 
 		msgs, ok := c.msgsGroupMap[msg.GroupID]
