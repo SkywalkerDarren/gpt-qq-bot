@@ -115,4 +115,5 @@ fabric.properties
 go.work
 
 build/
+**/config.json
 
